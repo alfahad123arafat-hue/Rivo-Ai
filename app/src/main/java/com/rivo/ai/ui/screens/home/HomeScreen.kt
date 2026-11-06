@@ -40,13 +40,16 @@ fun HomeScreen(
     val activeApi by vm.activeApiConfig.collectAsState()
     val context = LocalContext.current
     val listState = rememberLazyListState()
+    val snackbarHost = remember { SnackbarHostState() }
 
+    LaunchedEffect(error) { error?.let { snackbarHost.showSnackbar(it) } }
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
     }
 
     Scaffold(
         containerColor = SoftWhite,
+        snackbarHost = { SnackbarHost(snackbarHost) },
         topBar = {
             TopBar(
                 activeModel = activeApi?.modelId ?: "No model",
@@ -66,7 +69,7 @@ fun HomeScreen(
             )
         }
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding).background(SoftWhite)) {
+        Box(modifier = Modifier.fillMaxSize().padding(padding).background(SoftWhite).imePadding()) {
             if (messages.isEmpty()) {
                 EmptyState(
                     onSuggestionClick = { vm.setInput(it) },
@@ -84,22 +87,13 @@ fun HomeScreen(
                             content = msg.content.ifBlank { "..." },
                             isError = msg.isError,
                             onCopy = { copyToClipboard(context, msg.content, "Copied") },
-                            onRetry = if (msg.isError) ({ vm.retryLast() }) else null
+                            onRetry = if (msg.content.startsWith("Error:")) ({ vm.retryLast() }) else null
                         )
                     }
                     if (isGenerating && messages.lastOrNull()?.content?.isEmpty() == true) {
                         item { TypingIndicator() }
                     }
                 }
-            }
-
-            error?.let { err ->
-                Snackbar(
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
-                    action = {
-                        TextButton(onClick = { vm.clearError() }) { Text("Dismiss") }
-                    }
-                ) { Text(err, maxLines = 3) }
             }
         }
     }
@@ -124,7 +118,7 @@ fun TopBar(
             }
             Column {
                 Text("Rivo AI", fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = 18.sp, color = DeepText)
-                Text(activeApiName, fontSize = 11.sp, color = MutedText)
+                Text(activeApiName, fontSize = 11.sp, color = MutedText, maxLines = 1)
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -155,7 +149,6 @@ fun EmptyState(onSuggestionClick: (String) -> Unit, activeApiName: String?) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top
     ) {
-        // Top subtle badges like reference (Get Pro / close)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -176,77 +169,30 @@ fun EmptyState(onSuggestionClick: (String) -> Unit, activeApiName: String?) {
                 }
             }
         }
-
         Spacer(Modifier.height(10.dp))
-
         GlowingOrb(modifier = Modifier.padding(top = 12.dp, bottom = 16.dp), sizeDp = 195)
-
-        Text(
-            text = "Hello Rehan",
-            fontFamily = FontFamily.Serif,
-            fontWeight = FontWeight.Light,
-            fontSize = 30.sp,
-            color = DeepText.copy(alpha = 0.95f),
-            letterSpacing = 0.3.sp
-        )
-        Text(
-            text = "How can i help",
-            fontFamily = FontFamily.Serif,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 30.sp,
-            color = DeepText,
-            lineHeight = 34.sp
-        )
-        Text(
-            text = "you today",
-            fontFamily = FontFamily.Serif,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 30.sp,
-            color = DeepText,
-            lineHeight = 34.sp
-        )
+        Text(text = "Hello Rehan", fontFamily = FontFamily.Serif, fontWeight = FontWeight.Light, fontSize = 30.sp, color = DeepText.copy(alpha = 0.95f), letterSpacing = 0.3.sp)
+        Text(text = "How can i help", fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = 30.sp, color = DeepText, lineHeight = 34.sp)
+        Text(text = "you today", fontFamily = FontFamily.Serif, fontWeight = FontWeight.SemiBold, fontSize = 30.sp, color = DeepText, lineHeight = 34.sp)
         Spacer(Modifier.height(10.dp))
-        Text(
-            text = "is simply dummy text of the printing and\ntypesetting industry. Lorem Ipsum",
-            color = MutedText,
-            fontSize = 12.sp,
-            lineHeight = 16.sp,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-        )
-
+        Text(text = "is simply dummy text of the printing and\ntypesetting industry. Lorem Ipsum", color = MutedText, fontSize = 12.sp, lineHeight = 16.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
         Spacer(Modifier.height(20.dp))
-
-        // Listening state hint like reference: "Speak your thoughts homie"
         if (activeApiName == null) {
             Text("Add an API to start", color = MutedText, fontSize = 13.sp)
         }
-
         Spacer(Modifier.weight(1f))
-
-        // Suggestion chips like reference
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             SuggestionChip(label = "Read me a book", icon = "📖", onClick = { onSuggestionClick("Read me a book") }, modifier = Modifier.weight(1f))
             SuggestionChip(label = "Personal therapy", icon = "✦", onClick = { onSuggestionClick("I need personal therapy advice") }, modifier = Modifier.weight(1f))
         }
         Spacer(Modifier.height(10.dp))
-        // Bottom hint row mimicking input placeholder style
         Row(
-            modifier = Modifier.fillMaxWidth()
-                .clip(RoundedCornerShape(24.dp))
-                .background(Color.White)
-                .border(1.dp, BorderLight, RoundedCornerShape(24.dp))
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Color.White).border(1.dp, BorderLight, RoundedCornerShape(24.dp)).padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box(modifier = Modifier.size(22.dp).clip(CircleShape).background(Brush.linearGradient(listOf(PurplePrimary, PinkAccent)))) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("◉", color = Color.White, fontSize = 10.sp)
-                    }
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("◉", color = Color.White, fontSize = 10.sp) }
                 }
                 Text("Tap on AI to start speaking...", color = MutedText, fontSize = 12.sp)
             }
@@ -258,13 +204,7 @@ fun EmptyState(onSuggestionClick: (String) -> Unit, activeApiName: String?) {
 
 @Composable
 fun SuggestionChip(label: String, icon: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier.clickable { onClick() },
-        shape = RoundedCornerShape(16.dp),
-        color = Color.White,
-        shadowElevation = 1.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight)
-    ) {
+    Surface(modifier = modifier.clickable { onClick() }, shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 1.dp, border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight)) {
         Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(icon, fontSize = 13.sp)
             Text(label, fontSize = 11.sp, color = DeepText, lineHeight = 13.sp, fontWeight = FontWeight.Medium, maxLines = 2)
@@ -273,56 +213,23 @@ fun SuggestionChip(label: String, icon: String, onClick: () -> Unit, modifier: M
 }
 
 @Composable
-fun InputBar(
-    text: String,
-    isGenerating: Boolean,
-    onTextChange: (String) -> Unit,
-    onSend: () -> Unit,
-    onStop: () -> Unit
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-        shape = RoundedCornerShape(28.dp),
-        color = Color.White,
-        shadowElevation = 8.dp,
-        tonalElevation = 8.dp
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
+fun InputBar(text: String, isGenerating: Boolean, onTextChange: (String) -> Unit, onSend: () -> Unit, onStop: () -> Unit) {
+    Surface(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp).navigationBarsPadding(), shape = RoundedCornerShape(28.dp), color = Color.White, shadowElevation = 8.dp, tonalElevation = 8.dp) {
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 6.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextField(
                 value = text,
                 onValueChange = onTextChange,
                 modifier = Modifier.weight(1f),
                 placeholder = { Text("Write down instead...", color = MutedText, fontSize = 13.sp) },
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    disabledContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    cursorColor = PurplePrimary
-                ),
-                maxLines = 5,
-                minLines = 1
+                colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, disabledContainerColor = Color.Transparent, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent, cursorColor = PurplePrimary),
+                maxLines = 5, minLines = 1
             )
             if (isGenerating) {
-                IconButton(
-                    onClick = onStop,
-                    modifier = Modifier.size(44.dp).clip(CircleShape).background(Color(0xFFFFE8EE))
-                ) {
+                IconButton(onClick = onStop, modifier = Modifier.size(44.dp).clip(CircleShape).background(Color(0xFFFFE8EE))) {
                     Icon(Icons.Default.Stop, null, tint = ErrorRed)
                 }
             } else {
-                IconButton(
-                    onClick = onSend,
-                    enabled = text.isNotBlank(),
-                    modifier = Modifier.size(44.dp).clip(CircleShape).background(
-                        if (text.isNotBlank()) Brush.linearGradient(listOf(PurplePrimary, PinkAccent)) else Brush.linearGradient(listOf(Color(0xFFE8E8FF), Color(0xFFE8E8FF)))
-                    )
-                ) {
+                IconButton(onClick = onSend, enabled = text.isNotBlank(), modifier = Modifier.size(44.dp).clip(CircleShape).background(if (text.isNotBlank()) Brush.linearGradient(listOf(PurplePrimary, PinkAccent)) else Brush.linearGradient(listOf(Color(0xFFE8E8FF), Color(0xFFE8E8FF))))) {
                     Icon(Icons.Default.Send, null, tint = Color.White, modifier = Modifier.size(18.dp))
                 }
             }

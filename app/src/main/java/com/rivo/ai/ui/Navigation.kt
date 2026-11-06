@@ -26,6 +26,7 @@ import com.rivo.ai.ui.screens.home.HomeViewModel
 import com.rivo.ai.ui.screens.prompts.PromptsScreen
 import com.rivo.ai.ui.screens.settings.AppSettingsScreen
 import com.rivo.ai.ui.theme.*
+import kotlinx.coroutines.launch
 
 sealed class Screen(val route: String, val label: String, val icon: ImageVector) {
     object Home : Screen("home", "New Chat", Icons.Default.Home)
@@ -38,41 +39,52 @@ sealed class Screen(val route: String, val label: String, val icon: ImageVector)
 @Composable
 fun AppNavHost(homeViewModel: HomeViewModel) {
     val nav = rememberNavController()
-    var showDrawer by remember { mutableStateOf(false) }
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
 
     ModalNavigationDrawer(
-        drawerState = rememberDrawerState(if (showDrawer) DrawerValue.Open else DrawerValue.Closed),
+        drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet(drawerContainerColor = SoftWhite) {
                 DrawerContent(
                     onNavigate = { route ->
-                        showDrawer = false
+                        scope.launch { drawerState.close() }
                         nav.navigate(route) {
                             launchSingleTop = true
+                            restoreState = true
                         }
                     },
                     onNewChat = {
-                        showDrawer = false
+                        scope.launch { drawerState.close() }
                         homeViewModel.newChat()
-                        nav.navigate(Screen.Home.route)
+                        nav.navigate(Screen.Home.route) {
+                            popUpTo(Screen.Home.route) { inclusive = false }
+                            launchSingleTop = true
+                        }
                     }
                 )
             }
         },
-        gesturesEnabled = showDrawer
+        gesturesEnabled = true
     ) {
         NavHost(navController = nav, startDestination = Screen.Home.route) {
             composable(Screen.Home.route) {
                 HomeScreen(
                     vm = homeViewModel,
-                    onMenuClick = { showDrawer = true },
+                    onMenuClick = {
+                        scope.launch {
+                            if (drawerState.isClosed) drawerState.open() else drawerState.close()
+                        }
+                    },
                     onModelClick = { nav.navigate(Screen.Api.route) }
                 )
             }
             composable(Screen.History.route) {
                 HistoryScreen(onBack = { nav.popBackStack() }, onOpen = { id ->
                     homeViewModel.selectConversation(id)
-                    nav.navigate(Screen.Home.route)
+                    nav.navigate(Screen.Home.route) {
+                        launchSingleTop = true
+                    }
                 })
             }
             composable(Screen.Api.route) {
@@ -85,11 +97,6 @@ fun AppNavHost(homeViewModel: HomeViewModel) {
                 AppSettingsScreen(onBack = { nav.popBackStack() })
             }
         }
-    }
-
-    // Sync drawer state
-    LaunchedEffect(showDrawer) {
-        // handled via rememberDrawerState initial, but we need to open/close via side effect
     }
 }
 

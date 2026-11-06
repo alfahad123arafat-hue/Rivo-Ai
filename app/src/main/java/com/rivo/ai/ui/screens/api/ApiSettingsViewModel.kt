@@ -37,14 +37,19 @@ class ApiSettingsViewModel @Inject constructor(
         viewModelScope.launch {
             if (name.isBlank() || baseUrl.isBlank()) { _error.value = "Name and Base URL required"; return@launch }
             if (!isValidUrl(baseUrl)) { _error.value = "Invalid URL: must start with https://"; return@launch }
+            if (provider == ProviderType.GEMINI.name && !baseUrl.contains("generativelanguage.googleapis.com") && !baseUrl.contains("googleapis.com")) {
+                // allow custom gemini proxy but warn
+            }
             val id = repo.createApiConfig(name, provider, baseUrl, apiKey, modelId)
             _message.value = "Configuration saved"
+            _models.value = emptyList()
             onDone(id)
         }
     }
 
     fun updateConfig(id: Long, name: String, provider: String, baseUrl: String, apiKey: String?, modelId: String, onDone: () -> Unit) {
         viewModelScope.launch {
+            if (name.isBlank()) { _error.value = "Name required"; return@launch }
             if (!isValidUrl(baseUrl)) { _error.value = "Invalid URL"; return@launch }
             repo.updateApiConfig(id, name, provider, baseUrl, apiKey, modelId)
             _message.value = "Updated"
@@ -70,6 +75,7 @@ class ApiSettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoadingModels.value = true
             _error.value = null
+            _message.value = null
             when (val res = repo.testConnection(config)) {
                 is Result.Success -> _message.value = res.data
                 is Result.Error -> _error.value = res.message
@@ -83,10 +89,11 @@ class ApiSettingsViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoadingModels.value = true
             _error.value = null
+            _message.value = null
             when (val res = repo.fetchModels(config)) {
                 is Result.Success -> {
                     _models.value = res.data
-                    if (res.data.isEmpty()) _error.value = "No models returned"
+                    if (res.data.isEmpty()) _error.value = "No compatible models returned. Enter Model ID manually."
                     else _message.value = "Found ${res.data.size} models"
                 }
                 is Result.Error -> _error.value = res.message
@@ -99,24 +106,20 @@ class ApiSettingsViewModel @Inject constructor(
     fun fetchModelsForNew(provider: String, baseUrl: String, apiKey: String) {
         viewModelScope.launch {
             if (apiKey.isBlank() || baseUrl.isBlank()) { _error.value = "API Key and Base URL required to fetch"; return@launch }
-            // Create temp config for fetching
-            val temp = ApiConfigEntity(id = -1, name = "temp", providerType = provider, baseUrl = baseUrl, modelId = "")
-            // Save temp key to crypto with temp id -1 for fetching
-            // Instead we directly try via repo logic: create a fake entity and use crypto manager via repo.getApiKey hack
-            // We will call repo.testConnection style but we need apiKey. For fetch we need to bypass storage.
-            // We'll do manual fetch via repository method that reads from crypto: so temporarily store
-            // Workaround: create real temp entity in DB then fetch then delete
-            val tempId = repo.createApiConfig("temp_fetch", provider, baseUrl, apiKey, "")
-            val tempConfig = ApiConfigEntity(id = tempId, name = "temp", providerType = provider, baseUrl = baseUrl, modelId = "")
-            when (val res = repo.fetchModels(tempConfig)) {
+            if (!isValidUrl(baseUrl)) { _error.value = "Invalid URL"; return@launch }
+            _isLoadingModels.value = true
+            _error.value = null
+            _message.value = null
+            when (val res = repo.fetchModelsDirect(provider, baseUrl, apiKey)) {
                 is Result.Success -> {
                     _models.value = res.data
-                    _message.value = "Found ${res.data.size} models"
+                    if (res.data.isEmpty()) _error.value = "No compatible models found. Check key or enter manually."
+                    else _message.value = "Found ${res.data.size} models"
                 }
                 is Result.Error -> _error.value = res.message
                 else -> {}
             }
-            repo.deleteApiConfig(tempId)
+            _isLoadingModels.value = false
         }
     }
 

@@ -3,7 +3,9 @@ package com.rivo.ai.ui.screens.prompts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -23,8 +25,12 @@ import com.rivo.ai.ui.theme.*
 fun PromptsScreen(vm: PromptsViewModel = hiltViewModel(), onBack: () -> Unit) {
     val prompts by vm.prompts.collectAsState()
     val msg by vm.msg.collectAsState()
+    val snackbarHost = remember { SnackbarHostState() }
     var showAdd by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<SystemPromptEntity?>(null) }
+
+    LaunchedEffect(msg) { msg?.let { snackbarHost.showSnackbar(it) } }
+    LaunchedEffect(msg) { if (msg != null) { kotlinx.coroutines.delay(2500); vm.clear() } }
 
     Scaffold(
         topBar = {
@@ -33,6 +39,7 @@ fun PromptsScreen(vm: PromptsViewModel = hiltViewModel(), onBack: () -> Unit) {
                 actions = { IconButton(onClick = { showAdd = true }) { Icon(Icons.Default.Add, null) } }
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHost) },
         containerColor = SoftWhite
     ) { padding ->
         LazyColumn(modifier = Modifier.padding(padding).fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -63,13 +70,6 @@ fun PromptsScreen(vm: PromptsViewModel = hiltViewModel(), onBack: () -> Unit) {
 
     if (showAdd) PromptDialog(null, vm, { showAdd = false }, { showAdd = false })
     editing?.let { PromptDialog(it, vm, { editing = null }, { editing = null }) }
-
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-        msg?.let {
-            LaunchedEffect(it) { kotlinx.coroutines.delay(2500); vm.clear() }
-            Snackbar(modifier = Modifier.padding(16.dp)) { Text(it) }
-        }
-    }
 }
 
 @Composable
@@ -77,8 +77,8 @@ fun PromptCard(p: SystemPromptEntity, onSetActive: () -> Unit, onEdit: () -> Uni
     Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White), elevation = CardDefaults.cardElevation(1.dp), modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(p.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
+                    Text(p.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1)
                     if (p.isActive) {
                         Surface(color = LavenderSurface, shape = RoundedCornerShape(8.dp)) { Text("Active", modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 10.sp, color = PurplePrimary, fontWeight = FontWeight.Bold) }
                     }
@@ -91,6 +91,7 @@ fun PromptCard(p: SystemPromptEntity, onSetActive: () -> Unit, onEdit: () -> Uni
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (!p.isActive) OutlinedButton(onClick = onSetActive, shape = RoundedCornerShape(10.dp)) { Text("Set Active", fontSize = 12.sp) }
                 OutlinedButton(onClick = onEdit, shape = RoundedCornerShape(10.dp)) { Text("Edit", fontSize = 12.sp) }
+                Spacer(Modifier.weight(1f))
                 IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, null, tint = ErrorRed, modifier = Modifier.size(18.dp)) }
             }
         }
@@ -104,16 +105,16 @@ fun PromptDialog(existing: SystemPromptEntity?, vm: PromptsViewModel, onDismiss:
     var text by remember { mutableStateOf(existing?.promptText ?: "") }
     val apiConfigs by vm.apiConfigs.collectAsState()
     var selectedApi by remember { mutableStateOf(existing?.apiConfigId) }
+    val scroll = rememberScrollState()
+    var expanded by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (existing == null) "New System Prompt" else "Edit Prompt") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Prompt Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = text, onValueChange = { text = it }, label = { Text("System Prompt") }, modifier = Modifier.fillMaxWidth(), minLines = 4, maxLines = 6)
-                // API association optional
-                var expanded by remember { mutableStateOf(false) }
+            Column(modifier = Modifier.verticalScroll(scroll), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Prompt Name") }, singleLine = true, modifier = Modifier.fillMaxWidth(), isError = name.isBlank())
+                OutlinedTextField(value = text, onValueChange = { text = it }, label = { Text("System Prompt") }, modifier = Modifier.fillMaxWidth(), minLines = 4, maxLines = 8, isError = text.isBlank(), supportingText = { if (text.length < 10) Text("${text.length}/10 min", color = MutedText) })
                 ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
                     OutlinedTextField(
                         value = selectedApi?.let { id -> apiConfigs.find { it.id == id }?.name } ?: "Global (all APIs)",
@@ -131,7 +132,7 @@ fun PromptDialog(existing: SystemPromptEntity?, vm: PromptsViewModel, onDismiss:
             }
         },
         confirmButton = {
-            Button(onClick = {
+            Button(enabled = name.isNotBlank() && text.isNotBlank(), onClick = {
                 if (existing == null) vm.create(name, text, selectedApi) else vm.update(existing.id, name, text)
                 onSave()
             }) { Text("Save") }

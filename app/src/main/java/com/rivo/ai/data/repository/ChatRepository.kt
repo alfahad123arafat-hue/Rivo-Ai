@@ -18,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.ensureActive
 import okhttp3.ResponseBody
 import retrofit2.Response
 
@@ -44,7 +45,11 @@ class ChatRepository @Inject constructor(
     // API Configs
     fun observeApiConfigs(): Flow<List<ApiConfigEntity>> = apiConfigDao.observeAll()
     suspend fun getActiveApiConfig(): ApiConfigEntity? = apiConfigDao.getActive()
+    suspend fun getApiConfigById(id: Long): ApiConfigEntity? = apiConfigDao.getById(id)
+    suspend fun getAllApiConfigs(): List<ApiConfigEntity> = apiConfigDao.getAll()
     fun observeActiveApiConfig(): Flow<ApiConfigEntity?> = apiConfigDao.observeActive()
+    suspend fun getConversation(id: Long): ConversationEntity? = conversationDao.getById(id)
+    suspend fun getAllConversations(): List<ConversationEntity> = conversationDao.getAll()
 
     suspend fun createApiConfig(name: String, providerType: String, baseUrl: String, apiKey: String, modelId: String): Long {
         val entity = ApiConfigEntity(name = name, providerType = providerType, baseUrl = baseUrl.trimEnd('/'), modelId = modelId)
@@ -107,20 +112,30 @@ class ChatRepository @Inject constructor(
     }
 
     suspend fun fetchModels(config: ApiConfigEntity): Result<List<UnifiedModel>> {
+        val apiKey = cryptoManager.getApiKey(config.id) ?: return Result.Error("API key missing")
+        return fetchModelsDirect(config.providerType, config.baseUrl, apiKey)
+    }
+
+    suspend fun fetchModelsDirect(providerType: String, baseUrl: String, apiKey: String): Result<List<UnifiedModel>> {
         return try {
-            val apiKey = cryptoManager.getApiKey(config.id) ?: return Result.Error("API key missing")
-            when (config.providerType) {
+            when (providerType) {
                 ProviderType.GEMINI.name -> {
-                    val url = buildGeminiModelsUrl(config.baseUrl)
+                    val url = buildGeminiModelsUrl(baseUrl)
                     val resp = geminiService.listModels(url, apiKey)
                     if (!resp.isSuccessful) return Result.Error(parseError(resp))
-                    val models = resp.body()?.models?.map {
+                    val all = resp.body()?.models ?: emptyList()
+                    // Only show models that support generateContent
+                    val filtered = all.filter { m ->
+                        val methods = m.supportedMethods ?: emptyList()
+                        methods.isEmpty() || methods.any { it.contains("generateContent", ignoreCase = true) }
+                    }
+                    val models = (if (filtered.isNotEmpty()) filtered else all).map {
                         UnifiedModel(it.modelId, it.displayName ?: it.modelId, "Gemini")
-                    } ?: emptyList()
+                    }
                     Result.Success(models)
                 }
                 else -> {
-                    val url = buildOpenAIModelsUrl(config.baseUrl)
+                    val url = buildOpenAIModelsUrl(baseUrl)
                     val resp = openAIService.listModels(url, "Bearer $apiKey")
                     if (resp.isSuccessful) {
                         val models = resp.body()?.data?.map { UnifiedModel(it.id, it.id, "OpenAI") } ?: emptyList()
@@ -188,7 +203,6 @@ class ChatRepository @Inject constructor(
         val e = ConversationEntity(title = title, apiConfigId = apiConfigId, modelId = modelId, systemPromptId = systemPromptId)
         return conversationDao.insert(e)
     }
-    suspend fun getConversation(id: Long) = conversationDao.getById(id)
     suspend fun deleteConversation(id: Long) {
         messageDao.deleteForConversation(id)
         conversationDao.deleteById(id)
@@ -227,10 +241,11 @@ class ChatRepository @Inject constructor(
         messages: List<MessageEntity>,
         conversationId: Long
     ): Flow<String> = callbackFlow {
+        val activeCallHolder = arrayOfNulls<okhttp3.Call>(1)
         try {
             val apiKey = cryptoManager.getApiKey(apiConfig.id)
             if (apiKey.isNullOrBlank()) {
-                close(IllegalStateException("API key missing"))
+                close(IllegalStateException("API key missing — configure key in API Settings"))
                 return@callbackFlow
             }
             when (apiConfig.providerType) {
@@ -238,13 +253,16 @@ class ChatRepository @Inject constructor(
                     streamGemini(apiConfig, apiKey, modelId, systemPrompt, messages, conversationId)
                 }
                 else -> {
-                    streamOpenAI(apiConfig, apiKey, modelId, systemPrompt, messages)
+                    streamOpenAI(apiConfig, apiKey, modelId, systemPrompt, messages) { c -> activeCallHolder[0] = c }
                 }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            close(e)
         } catch (e: Exception) {
+            // propagate as flow error — HomeViewModel will handle
             close(e)
         }
-        awaitClose {}
+        awaitClose { activeCallHolder[0]?.cancel() }
     }
 
     private suspend fun kotlinx.coroutines.channels.ProducerScope<String>.streamOpenAI(
@@ -252,7 +270,8 @@ class ChatRepository @Inject constructor(
         apiKey: String,
         modelId: String,
         systemPrompt: String?,
-        messages: List<MessageEntity>
+        messages: List<MessageEntity>,
+        onCallCreated: (okhttp3.Call) -> Unit
     ) {
         val base = apiConfig.baseUrl.trimEnd('/')
         val url = if (base.contains("/v1")) "$base/chat/completions" else "$base/v1/chat/completions"
@@ -274,16 +293,19 @@ class ChatRepository @Inject constructor(
             .build()
 
         val call = okHttpClient.newCall(request)
+        onCallCreated(call)
         val response = withContext(Dispatchers.IO) { call.execute() }
 
         if (!response.isSuccessful) {
             val err = response.body?.string() ?: response.message
+            response.close()
             throw IOException(parseOpenAIErrorString(response.code, err))
         }
 
         val source = response.body?.source() ?: throw IOException("Empty response")
         try {
             while (!source.exhausted()) {
+                ensureActive()
                 val line = source.readUtf8Line() ?: break
                 if (line.startsWith("data: ")) {
                     val data = line.removePrefix("data: ").trim()
@@ -294,7 +316,14 @@ class ChatRepository @Inject constructor(
                         if (!delta.isNullOrEmpty()) {
                             trySend(delta)
                         }
-                    } catch (e: Exception) {
+                        // also handle error in stream
+                        if (chunk.choices == null) {
+                            val errMap = gson.fromJson(data, Map::class.java)
+                            if (errMap.containsKey("error")) {
+                                throw IOException((errMap["error"] as? Map<*, *>)?.get("message")?.toString() ?: data)
+                            }
+                        }
+                    } catch (e: IOException) { throw e } catch (e: Exception) {
                         // ignore parse errors for single chunk
                     }
                 }
@@ -313,7 +342,7 @@ class ChatRepository @Inject constructor(
         messages: List<MessageEntity>,
         conversationId: Long
     ) {
-        // Gemini non-streaming for simplicity, but we simulate streaming by splitting response
+        // Gemini non-streaming — split into chunks to simulate streaming
         val base = apiConfig.baseUrl.trimEnd('/')
         val cleanBase = if (base.contains("generativelanguage.googleapis.com")) base else "https://generativelanguage.googleapis.com"
         val url = "$cleanBase/v1beta/models/$modelId:generateContent"
@@ -336,10 +365,11 @@ class ChatRepository @Inject constructor(
         }
         val text = resp.body()?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
             ?: throw IOException("Empty response from Gemini")
-        // simulate streaming by sending in chunks
+        // simulate streaming by sending in chunks — respects cancellation
         val chunkSize = 12
         var idx = 0
         while (idx < text.length) {
+            ensureActive()
             val end = minOf(idx + chunkSize, text.length)
             trySend(text.substring(idx, end))
             kotlinx.coroutines.delay(18)

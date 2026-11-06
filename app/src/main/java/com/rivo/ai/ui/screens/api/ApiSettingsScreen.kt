@@ -6,7 +6,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -31,6 +33,12 @@ fun ApiSettingsScreen(vm: ApiSettingsViewModel = hiltViewModel(), onBack: () -> 
     val error by vm.error.collectAsState()
     var showAdd by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<ApiConfigEntity?>(null) }
+    val snackbarHost = remember { SnackbarHostState() }
+
+    LaunchedEffect(message) { message?.let { snackbarHost.showSnackbar(it) } }
+    LaunchedEffect(error) { error?.let { snackbarHost.showSnackbar(it) } }
+    LaunchedEffect(message) { if (message != null) { kotlinx.coroutines.delay(3000); vm.clearMessages() } }
+    LaunchedEffect(error) { if (error != null) { kotlinx.coroutines.delay(4000); vm.clearMessages() } }
 
     Scaffold(
         topBar = {
@@ -39,6 +47,7 @@ fun ApiSettingsScreen(vm: ApiSettingsViewModel = hiltViewModel(), onBack: () -> 
                 actions = { IconButton(onClick = { showAdd = true }) { Icon(Icons.Default.Add, null) } }
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHost) },
         containerColor = SoftWhite
     ) { padding ->
         LazyColumn(modifier = Modifier.padding(padding).fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -86,21 +95,6 @@ fun ApiSettingsScreen(vm: ApiSettingsViewModel = hiltViewModel(), onBack: () -> 
             onSave = { _, _, _, _, _ -> editing = null }
         )
     }
-
-    message?.let {
-        LaunchedEffect(it) { kotlinx.coroutines.delay(3000); vm.clearMessages() }
-    }
-    error?.let {
-        LaunchedEffect(it) { kotlinx.coroutines.delay(4000); vm.clearMessages() }
-    }
-
-    // Snackbars via Box
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(16.dp)) {
-            message?.let { Snackbar { Text(it) } }
-            error?.let { Snackbar(containerColor = ErrorRed) { Text(it) } }
-        }
-    }
 }
 
 @Composable
@@ -121,7 +115,7 @@ fun ApiConfigCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(cfg.name, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                         if (isActive) {
@@ -131,15 +125,16 @@ fun ApiConfigCard(
                         }
                     }
                     Text("${cfg.providerType} • ${cfg.baseUrl}", color = MutedText, fontSize = 12.sp, maxLines = 1)
-                    Text("Model: ${cfg.modelId.ifBlank { "Not set" }}", color = MutedText, fontSize = 12.sp)
+                    Text("Model: ${cfg.modelId.ifBlank { "Not set" }}", color = MutedText, fontSize = 12.sp, maxLines = 1)
                 }
                 IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, null, modifier = Modifier.size(18.dp), tint = MutedText) }
             }
             Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 if (!isActive) OutlinedButton(onClick = onSetActive, shape = RoundedCornerShape(10.dp)) { Text("Set Active", fontSize = 12.sp) }
                 OutlinedButton(onClick = onTest, shape = RoundedCornerShape(10.dp)) { Text("Test", fontSize = 12.sp) }
                 OutlinedButton(onClick = onFetch, shape = RoundedCornerShape(10.dp)) { Text("Fetch Models", fontSize = 12.sp) }
+                Spacer(Modifier.weight(1f))
                 IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, null, tint = ErrorRed, modifier = Modifier.size(18.dp)) }
             }
         }
@@ -162,8 +157,8 @@ fun ApiConfigDialog(
     var expanded by remember { mutableStateOf(false) }
     val models by vm.models.collectAsState()
     val isLoading by vm.isLoadingModels.collectAsState()
+    val scroll = rememberScrollState()
 
-    // Update baseUrl when provider changes and not editing
     LaunchedEffect(provider) {
         if (existing == null) {
             baseUrl = when (provider) {
@@ -178,9 +173,8 @@ fun ApiConfigDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (existing == null) "Add API Configuration" else "Edit Configuration") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("API Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                // Provider dropdown
+            Column(modifier = Modifier.fillMaxWidth().verticalScroll(scroll), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("API Name") }, singleLine = true, modifier = Modifier.fillMaxWidth(), isError = name.isBlank())
                 ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
                     OutlinedTextField(
                         value = provider,
@@ -196,46 +190,50 @@ fun ApiConfigDialog(
                         }
                     }
                 }
-                OutlinedTextField(value = baseUrl, onValueChange = { baseUrl = it }, label = { Text("API Base URL") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = apiKey, onValueChange = { apiKey = it }, label = { Text("API Key") }, singleLine = true, modifier = Modifier.fillMaxWidth(), visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
-
+                OutlinedTextField(value = baseUrl, onValueChange = { baseUrl = it }, label = { Text("API Base URL") }, singleLine = true, modifier = Modifier.fillMaxWidth(), isError = baseUrl.isBlank(), supportingText = { if (baseUrl.isNotBlank() && !baseUrl.startsWith("https://") && !baseUrl.startsWith("http://")) Text("Must start with https://", color = ErrorRed) })
+                OutlinedTextField(value = apiKey, onValueChange = { apiKey = it }, label = { Text("API Key") }, singleLine = true, modifier = Modifier.fillMaxWidth(), visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(), supportingText = { if (apiKey.isBlank()) Text("Required", color = MutedText) })
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = {
                             if (existing != null) vm.fetchModels(existing.copy(name = name, providerType = provider, baseUrl = baseUrl, modelId = modelId))
                             else vm.fetchModelsForNew(provider, baseUrl, apiKey)
                         },
-                        enabled = !isLoading
+                        enabled = !isLoading && apiKey.isNotBlank() && baseUrl.isNotBlank()
                     ) {
                         if (isLoading) CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                         else Text("Fetch Models", fontSize = 12.sp)
                     }
+                    if (isLoading) Text("Fetching…", color = MutedText, fontSize = 12.sp, modifier = Modifier.align(Alignment.CenterVertically))
                 }
-
                 if (models.isNotEmpty()) {
                     Text("Available models:", fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                    Box(modifier = Modifier.fillMaxWidth().height(120.dp).clip(RoundedCornerShape(8.dp)).border(1.dp, BorderLight, RoundedCornerShape(8.dp)).background(Color.White)) {
-                        androidx.compose.foundation.lazy.LazyColumn {
+                    Box(modifier = Modifier.fillMaxWidth().heightIn(max = 140.dp).clip(RoundedCornerShape(8.dp)).border(1.dp, BorderLight, RoundedCornerShape(8.dp)).background(Color.White)) {
+                        androidx.compose.foundation.lazy.LazyColumn(modifier = Modifier.fillMaxWidth()) {
                             items(models.size) { idx ->
                                 val m = models[idx]
-                                Row(modifier = Modifier.fillMaxWidth().clickable { modelId = m.id }.padding(8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text(m.id, fontSize = 12.sp)
+                                Row(modifier = Modifier.fillMaxWidth().clickable { modelId = m.id }.padding(horizontal = 12.dp, vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(m.id, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                        Text(m.displayName, fontSize = 11.sp, color = MutedText)
+                                    }
                                     if (modelId == m.id) Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp), tint = PurplePrimary)
                                 }
-                                Divider()
+                                if (idx < models.size - 1) Divider(color = BorderLight, thickness = 0.5.dp)
                             }
                         }
                     }
-                } else {
-                    OutlinedTextField(value = modelId, onValueChange = { modelId = it }, label = { Text("Model ID (or select from fetched)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Text("Tap to select", color = MutedText, fontSize = 11.sp)
                 }
+                OutlinedTextField(value = modelId, onValueChange = { modelId = it }, label = { Text("Model ID (or select from fetched)") }, singleLine = true, modifier = Modifier.fillMaxWidth(), supportingText = { if (modelId.isBlank()) Text("Required for chat", color = ErrorRed) })
             }
         },
         confirmButton = {
-            Button(onClick = {
-                if (existing == null) vm.createConfig(name, provider, baseUrl, apiKey, modelId) { onSave(name, provider, baseUrl, apiKey, modelId) }
-                else vm.updateConfig(existing.id, name, provider, baseUrl, if (apiKey.isBlank()) null else apiKey, modelId) { onSave(name, provider, baseUrl, apiKey, modelId) }
-            }) { Text("Save") }
+            Button(
+                enabled = name.isNotBlank() && baseUrl.isNotBlank(),
+                onClick = {
+                    if (existing == null) vm.createConfig(name, provider, baseUrl, apiKey, modelId) { onSave(name, provider, baseUrl, apiKey, modelId) }
+                    else vm.updateConfig(existing.id, name, provider, baseUrl, if (apiKey.isBlank()) null else apiKey, modelId) { onSave(name, provider, baseUrl, apiKey, modelId) }
+                }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )

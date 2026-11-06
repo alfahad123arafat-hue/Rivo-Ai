@@ -28,16 +28,20 @@ import java.util.*
 fun HistoryScreen(vm: HistoryViewModel = hiltViewModel(), onBack: () -> Unit, onOpen: (Long) -> Unit) {
     val conversations by vm.conversations.collectAsState()
     val fmt = remember { SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()) }
+    var confirmDeleteId by remember { mutableStateOf<Long?>(null) }
+    var confirmClearAll by remember { mutableStateOf(false) }
+    val snackbarHost = remember { SnackbarHostState() }
 
     Scaffold(
         topBar = {
             TopAppBar(title = { Text("Chat History", fontWeight = FontWeight.SemiBold) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } },
                 actions = {
-                    if (conversations.isNotEmpty()) TextButton(onClick = { vm.clearAll() }) { Text("Clear All", color = ErrorRed) }
+                    if (conversations.isNotEmpty()) TextButton(onClick = { confirmClearAll = true }) { Text("Clear All", color = ErrorRed) }
                 }
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHost) },
         containerColor = SoftWhite
     ) { padding ->
         if (conversations.isEmpty()) {
@@ -51,10 +55,31 @@ fun HistoryScreen(vm: HistoryViewModel = hiltViewModel(), onBack: () -> Unit, on
         } else {
             LazyColumn(modifier = Modifier.padding(padding).fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(conversations, key = { it.id }) { conv ->
-                    HistoryCard(conv, fmt.format(Date(conv.updatedAt)), onOpen = { onOpen(conv.id) }, onDelete = { vm.delete(conv.id) })
+                    HistoryCard(conv, fmt.format(Date(conv.updatedAt)), onOpen = { onOpen(conv.id) }, onDelete = { confirmDeleteId = conv.id })
                 }
             }
         }
+    }
+
+    confirmDeleteId?.let { id ->
+        AlertDialog(
+            onDismissRequest = { confirmDeleteId = null },
+            title = { Text("Delete conversation?") },
+            text = { Text("This will permanently remove this chat and its messages.") },
+            confirmButton = {
+                TextButton(onClick = { vm.delete(id); confirmDeleteId = null }) { Text("Delete", color = ErrorRed) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDeleteId = null }) { Text("Cancel") } }
+        )
+    }
+    if (confirmClearAll) {
+        AlertDialog(
+            onDismissRequest = { confirmClearAll = false },
+            title = { Text("Clear all history?") },
+            text = { Text("All conversations will be deleted. This cannot be undone.") },
+            confirmButton = { TextButton(onClick = { vm.clearAll(); confirmClearAll = false }) { Text("Clear All", color = ErrorRed) } },
+            dismissButton = { TextButton(onClick = { confirmClearAll = false }) { Text("Cancel") } }
+        )
     }
 }
 
@@ -63,13 +88,20 @@ fun HistoryCard(conv: ConversationEntity, dateStr: String, onOpen: () -> Unit, o
     Card(
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(1.dp),
         modifier = Modifier.fillMaxWidth().clickable { onOpen() }
     ) {
         Row(modifier = Modifier.padding(14.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(conv.title, fontWeight = FontWeight.Medium, fontSize = 15.sp, maxLines = 1)
                 Spacer(Modifier.height(4.dp))
-                Text("${conv.modelId ?: "No model"} • $dateStr", color = MutedText, fontSize = 12.sp)
+                // Handle missing API reference gracefully — show model or date only
+                val subtitle = when {
+                    conv.modelId.isNullOrBlank() -> dateStr
+                    conv.apiConfigId == null -> "${conv.modelId} • $dateStr"
+                    else -> "${conv.modelId} • $dateStr"
+                }
+                Text(subtitle, color = MutedText, fontSize = 12.sp, maxLines = 1)
             }
             IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, null, tint = MutedText, modifier = Modifier.size(18.dp)) }
         }
