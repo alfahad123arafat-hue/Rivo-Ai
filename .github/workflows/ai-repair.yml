@@ -1,0 +1,83 @@
+name: AI-Assisted Build Repair
+
+on:
+  workflow_run:
+    workflows: ["Build Rivo AI APK"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      retry_limit:
+        description: 'Max repair attempts'
+        required: false
+        default: '3'
+
+permissions:
+  contents: write
+  actions: read
+  pull-requests: write
+
+jobs:
+  detect-and-repair:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.event.workflow_run.head_branch || github.ref_name }}
+
+      - name: Check AI Repair Key
+        id: check_key
+        run: |
+          if [ -z "${{ secrets.AI_REPAIR_API_KEY }}" ]; then
+            echo "has_key=false" >> $GITHUB_OUTPUT
+            echo "### ⚠️ AI Repair Not Configured" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "To enable automatic build repair, add a GitHub Secret:" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "1. Go to Settings → Secrets and variables → Actions" >> $GITHUB_STEP_SUMMARY
+            echo "2. Create secret **AI_REPAIR_API_KEY** with your AI provider API key (OpenAI, Gemini, or OpenAI-compatible)" >> $GITHUB_STEP_SUMMARY
+            echo "3. Optionally set **AI_REPAIR_BASE_URL** (default: https://api.openai.com/v1)" >> $GITHUB_STEP_SUMMARY
+            echo "4. Optionally set **AI_REPAIR_MODEL** (default: gpt-4o-mini)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Without this secret, builds will fail normally and require manual fix." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "has_key=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Collect error logs
+        if: steps.check_key.outputs.has_key == 'true'
+        run: |
+          echo "Collecting logs from failed run..."
+          RUN_ID=${{ github.event.workflow_run.id }}
+          echo "Failed run ID: $RUN_ID"
+          # Try to fetch logs via GH API if available
+          gh run view $RUN_ID --log > repair_logs.txt 2>&1 || echo "Could not fetch logs, using local detection" > repair_logs.txt
+          # Also collect local build logs
+          if [ -d "app/build" ]; then find app/build -name "*.log" -exec cat {} \; >> repair_logs.txt 2>&1 || true; fi
+          head -c 15000 repair_logs.txt > repair_input.txt
+          echo "Log size: $(wc -c < repair_input.txt) bytes"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        if: steps.check_key.outputs.has_key == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: AI Repair Attempt
+        if: steps.check_key.outputs.has_key == 'true'
+        env:
+          AI_REPAIR_API_KEY: ${{ secrets.AI_REPAIR_API_KEY }}
+          AI_REPAIR_BASE_URL: ${{ secrets.AI_REPAIR_BASE_URL }}
+          AI_REPAIR_MODEL: ${{ secrets.AI_REPAIR_MODEL }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python .github/scripts/ai_repair.py --retry-limit ${{ inputs.retry_limit || '3' }}
+
+      - name: Report Result
+        if: always()
+        run: |
+          cat repair_report.md >> $GITHUB_STEP_SUMMARY 2>&1 || echo "No repair report"
