@@ -46,7 +46,7 @@ private val DarkColorScheme = darkColorScheme(
 
 @Composable
 fun RivoTheme(
-    darkTheme: Boolean = isSystemInDarkTheme().not().not(), // force light by default but respect param
+    darkTheme: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme

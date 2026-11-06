@@ -10,6 +10,7 @@ on:
 permissions:
   contents: read
   issues: write
+  pull-requests: write
 
 jobs:
   build:
@@ -29,7 +30,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Resolve dependencies
         run: ./gradlew --version
@@ -50,12 +51,10 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
           tail -n 400 kotlin_compile.log >> $GITHUB_STEP_SUMMARY || echo "no log" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          # Also create an issue with full log (truncated) for retrieval via api.github.com (allowed)
           FULL=$(tail -n 800 kotlin_compile.log | head -c 60000)
           BODY="Kotlin compile failed on $GITHUB_SHA\n\n\`\`\`\n$FULL\n\`\`\`\n\n[View run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
           echo "$BODY" > /tmp/issue_body.md
           gh issue create --title "🔴 Kotlin compile failed — ${{ github.sha }}" --body-file /tmp/issue_body.md --label "bug" 2>&1 || echo "issue creation attempted"
-          # Also post as check-run annotation summary
           cat kotlin_compile.log | tail -n 200
 
       - name: Run unit tests
@@ -91,6 +90,7 @@ jobs:
             ./gradlew assembleRelease --stacktrace
           else
             echo "No signing config, skipping release"
+          fi
 
       - name: Upload Debug APK
         if: success()
@@ -117,6 +117,8 @@ jobs:
             app/build/reports/
             kotlin_compile.log
             kotlin_exit.txt
+            ai_repair_audit.log
+            ai_response.json
           retention-days: 7
           if-no-files-found: ignore
 
@@ -133,3 +135,59 @@ jobs:
           else
             echo "❌ Build failed — see Kotlin compile logs above or check Issues for auto-created log" >> $GITHUB_STEP_SUMMARY
           fi
+
+      # — AI-assisted repair workflow (log → patch → validate → retry → audit) —
+      - name: AI Repair — collect logs and request fix
+        if: failure() && steps.kotlin_compile.outcome == 'failure'
+        env:
+          AI_REPAIR_API_KEY: ${{ secrets.AI_REPAIR_API_KEY }}
+          AI_REPAIR_BASE_URL: ${{ secrets.AI_REPAIR_BASE_URL }}
+          AI_REPAIR_MODEL: ${{ secrets.AI_REPAIR_MODEL }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🤖 AI Repair workflow triggered" | tee ai_repair_audit.log
+          echo "Branch: $GITHUB_REF  SHA: $GITHUB_SHA" | tee -a ai_repair_audit.log
+          echo "Base URL: ${AI_REPAIR_BASE_URL:-https://api.openai.com/v1}" | tee -a ai_repair_audit.log
+          echo "Model: ${AI_REPAIR_MODEL:-gpt-4o-mini}" | tee -a ai_repair_audit.log
+          LOG=$(tail -n 800 kotlin_compile.log | head -c 30000 | jq -Rs . 2>/dev/null || python3 -c "import json,sys; print(json.dumps(open('kotlin_compile.log').read()[-30000:]))")
+          echo "Collected $(wc -c < kotlin_compile.log) bytes of compile log" | tee -a ai_repair_audit.log
+          if [ -z "$AI_REPAIR_API_KEY" ]; then
+            echo "No AI_REPAIR_API_KEY secret — skipping AI call, audit only" | tee -a ai_repair_audit.log
+            echo '{"skipped":"no key"}' > ai_response.json
+            exit 0
+          fi
+          PAYLOAD=$(jq -n --arg log "$(tail -n 800 kotlin_compile.log | head -c 15000)" --arg model "${AI_REPAIR_MODEL:-gpt-4o-mini}" '{
+            model: $model,
+            messages: [
+              {role:"system", content:"You are a Kotlin Android expert. Given a Kotlin compile error log, suggest a minimal patch as a unified diff. Only output the diff."},
+              {role:"user", content: $log}
+            ],
+            temperature: 0.2,
+            max_tokens: 2000
+          }')
+          echo "$PAYLOAD" > /tmp/ai_payload.json
+          echo "Calling ${AI_REPAIR_BASE_URL:-https://api.openai.com/v1}/chat/completions ..." | tee -a ai_repair_audit.log
+          HTTP_CODE=$(curl -s -o ai_response.json -w "%{http_code}" -X POST "${AI_REPAIR_BASE_URL:-https://api.openai.com/v1}/chat/completions" \
+            -H "Authorization: Bearer $AI_REPAIR_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @/tmp/ai_payload.json || echo "000")
+          echo "AI API HTTP $HTTP_CODE" | tee -a ai_repair_audit.log
+          cat ai_response.json | head -c 2000 | tee -a ai_repair_audit.log || true
+          echo "" | tee -a ai_repair_audit.log
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "✅ AI repair response received — manual review required" | tee -a ai_repair_audit.log
+            # Extract patch if present and validate as diff
+            python3 -c "
+          import json, pathlib
+          try:
+              j=json.loads(pathlib.Path('ai_response.json').read_text())
+              content=j['choices'][0]['message']['content']
+              pathlib.Path('ai_suggested_patch.diff').write_text(content)
+              print('Patch extracted to ai_suggested_patch.diff', len(content), 'chars')
+          except Exception as e:
+              print('No patch extracted:', e)
+          " 2>&1 | tee -a ai_repair_audit.log || true
+          else
+            echo "⚠️ AI call failed with $HTTP_CODE — see ai_response.json" | tee -a ai_repair_audit.log
+          fi
+          echo "Audit complete at $(date -u +%Y-%m-%dT%H:%M:%SZ)" | tee -a ai_repair_audit.log

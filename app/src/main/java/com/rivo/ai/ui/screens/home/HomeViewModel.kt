@@ -3,11 +3,8 @@ package com.rivo.ai.ui.screens.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rivo.ai.data.local.ApiConfigEntity
-import com.rivo.ai.data.local.ConversationEntity
 import com.rivo.ai.data.local.MessageEntity
-import com.rivo.ai.data.local.SystemPromptEntity
 import com.rivo.ai.data.repository.ChatRepository
-import com.rivo.ai.data.repository.Result
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.*
@@ -40,28 +37,26 @@ class HomeViewModel @Inject constructor(
     val error: StateFlow<String?> = _error
 
     private var streamingJob: Job? = null
+    private var observeJob: Job? = null
 
     fun setInput(t: String) { _inputText.value = t }
     fun clearError() { _error.value = null }
 
     fun selectConversation(id: Long) {
         _currentConversationId.value = id
-        viewModelScope.launch {
+        observeJob?.cancel()
+        observeJob = viewModelScope.launch {
             repo.observeMessages(id).collect { _messages.value = it }
         }
     }
 
     fun newChat() {
         streamingJob?.cancel()
+        observeJob?.cancel()
         _currentConversationId.value = null
         _messages.value = emptyList()
         _error.value = null
         _isGenerating.value = false
-    }
-
-    fun createAndSelectConversation(title: String = "New Chat"): Long? {
-        // will be created on first message if needed
-        return null
     }
 
     suspend fun ensureConversation(): Long {
@@ -75,8 +70,8 @@ class HomeViewModel @Inject constructor(
             systemPromptId = activePrompt?.id
         )
         _currentConversationId.value = id
-        // start observing
-        viewModelScope.launch {
+        observeJob?.cancel()
+        observeJob = viewModelScope.launch {
             repo.observeMessages(id).collect { _messages.value = it }
         }
         return id
@@ -88,7 +83,13 @@ class HomeViewModel @Inject constructor(
         if (_isGenerating.value) return
         viewModelScope.launch {
             try {
-                val active = repo.getActiveApiConfig()
+                var active = repo.getActiveApiConfig()
+                // Prefer conversation's original API if it exists
+                _currentConversationId.value?.let { cid ->
+                    repo.getConversation(cid)?.apiConfigId?.let { storedId ->
+                        repo.getApiConfigById(storedId)?.let { stored -> active = stored }
+                    }
+                }
                 if (active == null) {
                     _error.value = "No active API configured. Please add one in API Settings."
                     return@launch
@@ -100,14 +101,14 @@ class HomeViewModel @Inject constructor(
                 val convId = ensureConversation()
                 _inputText.value = ""
                 repo.addMessage(convId, "user", text)
-                // get history
                 val history = repo.getMessages(convId).filterNot { it.isError }
-                val systemPromptText = repo.getActivePrompt()?.promptText?.takeIf { it.isNotBlank() }
+                // Only include enabled prompts; getActivePrompt already respects isEnabled but double-check
+                val activePrompt = repo.getActivePrompt()
+                val systemPromptText = if (activePrompt?.isEnabled == true) activePrompt.promptText.takeIf { it.isNotBlank() } else null
 
                 _isGenerating.value = true
                 _error.value = null
 
-                // Create placeholder assistant message
                 val assistantMsgId = repo.addMessage(convId, "assistant", "")
 
                 val buffer = StringBuilder()
@@ -120,14 +121,23 @@ class HomeViewModel @Inject constructor(
                         if (buffer.isEmpty()) {
                             repo.updateMessage(assistantMsgId, "(Empty response)")
                         }
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        // Stopped by user
+                        if (buffer.isNotEmpty()) repo.updateMessage(assistantMsgId, buffer.toString())
+                        else repo.updateMessage(assistantMsgId, "Stopped")
+                        throw e
                     } catch (e: Exception) {
-                        val msg = e.message ?: "Unknown error"
-                        // Update with error
+                        val msg = when {
+                            e.message?.contains("API key", true) == true -> "Invalid API key. Check API Settings."
+                            e.message?.contains("429", true) == true || e.message?.contains("rate limit", true) == true -> "Rate limit exceeded. Try again later."
+                            e.message?.contains("404", true) == true || e.message?.contains("model", true) == true -> "Model not found. Check model selection."
+                            e.message?.contains("Network", true) == true -> "Network error. Check connection."
+                            else -> e.message ?: "Unknown error"
+                        }
                         if (buffer.isNotEmpty()) {
                             repo.updateMessage(assistantMsgId, buffer.toString())
                         } else {
                             repo.updateMessage(assistantMsgId, "Error: $msg")
-                            // mark error
                         }
                         _error.value = msg
                     } finally {
@@ -160,6 +170,4 @@ class HomeViewModel @Inject constructor(
             if (_currentConversationId.value == id) newChat()
         }
     }
-
-    fun copyMessageContent(content: String, onCopy: (String) -> Unit) = onCopy(content)
 }

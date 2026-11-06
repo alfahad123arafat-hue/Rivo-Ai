@@ -21,9 +21,15 @@ import com.rivo.ai.ui.theme.SoftWhite
 @Composable
 fun AppSettingsScreen(vm: AppSettingsViewModel = hiltViewModel(), onBack: () -> Unit) {
     val isDark by vm.isDark.collectAsState()
+    val message by vm.message.collectAsState()
+    val snackbarHost = remember { SnackbarHostState() }
+    var confirmClear by remember { mutableStateOf(false) }
+
+    LaunchedEffect(message) { message?.let { snackbarHost.showSnackbar(it) } }
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("App Settings", fontWeight = FontWeight.SemiBold) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } }) },
+        snackbarHost = { SnackbarHost(snackbarHost) },
         containerColor = SoftWhite
     ) { padding ->
         Column(modifier = Modifier.padding(padding).padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -45,7 +51,7 @@ fun AppSettingsScreen(vm: AppSettingsViewModel = hiltViewModel(), onBack: () -> 
                     Spacer(Modifier.height(8.dp))
                     Text("Manage your local conversation storage", color = MutedText, fontSize = 13.sp)
                     Spacer(Modifier.height(12.dp))
-                    OutlinedButton(onClick = { vm.clearHistory() }, shape = RoundedCornerShape(10.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE5486A))) {
+                    OutlinedButton(onClick = { confirmClear = true }, shape = RoundedCornerShape(10.dp), colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFE5486A))) {
                         Icon(Icons.Default.DeleteForever, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("Clear Chat History")
@@ -66,10 +72,16 @@ fun AppSettingsScreen(vm: AppSettingsViewModel = hiltViewModel(), onBack: () -> 
                     Text("Built with Kotlin, Jetpack Compose, Room & Retrofit. Secure API key storage via Android Keystore.", color = MutedText, fontSize = 12.sp, lineHeight = 16.sp)
                 }
             }
-
-            vm.message?.let { msg ->
-                Snackbar { Text(msg) }
-            }
         }
+    }
+
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("Clear all chat history?") },
+            text = { Text("All local conversations will be deleted. This cannot be undone.") },
+            confirmButton = { TextButton(onClick = { vm.clearHistory(); confirmClear = false }) { Text("Clear", color = Color(0xFFE5486A)) } },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } }
+        )
     }
 }

@@ -1,8 +1,5 @@
 package com.rivo.ai.ui.screens.settings
 
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -11,7 +8,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.rivo.ai.data.repository.ChatRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -27,7 +27,8 @@ class AppSettingsViewModel @Inject constructor(
 
     val isDark = dataStore.data.map { it[darkKey] ?: false }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-    var message by mutableStateOf<String?>(null)
+    private val _message = MutableStateFlow<String?>(null)
+    val message: StateFlow<String?> = _message
 
     fun setDark(enabled: Boolean) {
         viewModelScope.launch { dataStore.edit { it[darkKey] = enabled } }
@@ -36,9 +37,9 @@ class AppSettingsViewModel @Inject constructor(
     fun clearHistory() {
         viewModelScope.launch {
             repo.clearAllHistory()
-            message = "Chat history cleared"
-            kotlinx.coroutines.delay(2000)
-            message = null
+            _message.value = "Chat history cleared"
+            delay(2000)
+            _message.value = null
         }
     }
 }
