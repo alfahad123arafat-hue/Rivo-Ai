@@ -97,6 +97,7 @@ fun PromptCard(p: SystemPromptEntity, onSetActive: () -> Unit, onEdit: () -> Uni
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PromptDialog(existing: SystemPromptEntity?, vm: PromptsViewModel, onDismiss: () -> Unit, onSave: () -> Unit) {
     var name by remember { mutableStateOf(existing?.name ?: "") }

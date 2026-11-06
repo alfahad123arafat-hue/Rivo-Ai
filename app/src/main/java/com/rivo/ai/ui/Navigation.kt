@@ -28,8 +28,8 @@ import com.rivo.ai.ui.screens.settings.AppSettingsScreen
 import com.rivo.ai.ui.theme.*
 
 sealed class Screen(val route: String, val label: String, val icon: ImageVector) {
-    object Home : Screen("home", "New Chat", Icons.Default.ChatBubble)
-    object History : Screen("history", "Chat History", Icons.Default.Refresh)
+    object Home : Screen("home", "New Chat", Icons.Default.Home)
+    object History : Screen("history", "Chat History", Icons.Filled.Home)
     object Api : Screen("api", "API Settings", Icons.Default.Settings)
     object Prompts : Screen("prompts", "System Prompts", Icons.Default.Star)
     object Settings : Screen("settings", "App Settings", Icons.Default.Settings)

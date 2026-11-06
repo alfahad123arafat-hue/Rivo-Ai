@@ -26,8 +26,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.rivo.ai.ui.theme.*
-import org.commonmark.parser.Parser
-import org.commonmark.renderer.html.HtmlRenderer
 
 fun copyToClipboard(context: Context, text: String, label: String = "Copied") {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager

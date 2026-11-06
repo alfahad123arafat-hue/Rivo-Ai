@@ -2,13 +2,14 @@ name: Build Rivo AI APK
 
 on:
   push:
-    branches: [ "main", "arena/**", "arena/45292205-rivo-ai" ]
+    branches: [ "main", "arena/**" ]
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   build:
@@ -24,29 +25,54 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
 
       - name: Resolve dependencies
         run: ./gradlew --version
 
       - name: Kotlin compile
-        run: ./gradlew compileDebugKotlin --stacktrace
+        id: kotlin_compile
+        run: |
+          set -o pipefail
+          ./gradlew compileDebugKotlin --stacktrace 2>&1 | tee kotlin_compile.log
+          echo "exit:$?" > kotlin_exit.txt
+
+      - name: Capture Kotlin compile failure logs
+        if: failure() && steps.kotlin_compile.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "## Kotlin Compile Failed — Diagnostics" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -n 400 kotlin_compile.log >> $GITHUB_STEP_SUMMARY || echo "no log" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          # Also create an issue with full log (truncated) for retrieval via api.github.com (allowed)
+          FULL=$(tail -n 800 kotlin_compile.log | head -c 60000)
+          BODY="Kotlin compile failed on $GITHUB_SHA\n\n\`\`\`\n$FULL\n\`\`\`\n\n[View run](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          echo "$BODY" > /tmp/issue_body.md
+          gh issue create --title "🔴 Kotlin compile failed — ${{ github.sha }}" --body-file /tmp/issue_body.md --label "bug" 2>&1 || echo "issue creation attempted"
+          # Also post as check-run annotation summary
+          cat kotlin_compile.log | tail -n 200
 
       - name: Run unit tests
+        if: success()
         run: ./gradlew testDebugUnitTest --stacktrace
 
       - name: Android Lint
+        if: success()
         run: ./gradlew lintDebug --stacktrace
         continue-on-error: true
 
       - name: Build Debug APK
+        if: success()
         run: ./gradlew assembleDebug --stacktrace
 
       - name: Verify APK exists and non-empty
+        if: success()
         run: |
           APK="app/build/outputs/apk/debug/app-debug.apk"
           if [ ! -f "$APK" ]; then echo "APK not found at $APK"; ls -R app/build/outputs/ || true; exit 1; fi
@@ -67,6 +93,7 @@ jobs:
             echo "No signing config, skipping release"
 
       - name: Upload Debug APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: rivo-ai-debug-apk
@@ -88,7 +115,8 @@ jobs:
           name: build-logs
           path: |
             app/build/reports/
-            app/build/outputs/logs/
+            kotlin_compile.log
+            kotlin_exit.txt
           retention-days: 7
           if-no-files-found: ignore
 
@@ -103,5 +131,5 @@ jobs:
             echo "Download from Artifacts: rivo-ai-debug-apk" >> $GITHUB_STEP_SUMMARY
             ls -lh app/build/outputs/apk/debug/*.apk >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ Build failed" >> $GITHUB_STEP_SUMMARY
+            echo "❌ Build failed — see Kotlin compile logs above or check Issues for auto-created log" >> $GITHUB_STEP_SUMMARY
           fi
