@@ -138,7 +138,7 @@ fun TopBar(
                 Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(PurplePrimary))
                     Text(activeModel.take(18).ifBlank { "Select model" }, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = DeepText, maxLines = 1)
-                    Icon(Icons.Default.KeyboardArrowDown, null, modifier = Modifier.size(16.dp), tint = MutedText)
+                    Icon(Icons.Default.ExpandMore, null, modifier = Modifier.size(16.dp), tint = MutedText)
                 }
             }
             IconButton(onClick = onNewChat, modifier = Modifier.size(40.dp).clip(CircleShape).background(Brush.linearGradient(listOf(PurplePrimary, PinkAccent)))) {
@@ -250,7 +250,7 @@ fun EmptyState(onSuggestionClick: (String) -> Unit, activeApiName: String?) {
                 }
                 Text("Tap on AI to start speaking...", color = MutedText, fontSize = 12.sp)
             }
-            Icon(Icons.Default.AttachFile, null, modifier = Modifier.size(16.dp), tint = MutedText)
+            Icon(Icons.Default.Add, null, modifier = Modifier.size(16.dp), tint = MutedText)
         }
         Spacer(Modifier.height(4.dp))
     }

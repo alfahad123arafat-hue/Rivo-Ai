@@ -97,7 +97,6 @@ dependencies {
 
     // Security
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
-    implementation("androidx.datastore:datastore-preferences:1.0.0")
 
     // Networking
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
@@ -113,9 +112,6 @@ dependencies {
 
     // Coil for images (optional)
     implementation("io.coil-kt:coil-compose:2.6.0")
-
-    // Accompanist / System UI
-    implementation("com.google.accompanist:accompanist-systemuicontroller:0.32.0")
 
     // Preferences helper
     implementation("androidx.preference:preference-ktx:1.2.1")
