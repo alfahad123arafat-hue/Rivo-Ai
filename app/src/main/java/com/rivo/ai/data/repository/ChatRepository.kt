@@ -6,6 +6,8 @@ import com.rivo.ai.data.remote.*
 import com.rivo.ai.security.CryptoManager
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import retrofit2.Retrofit
@@ -263,11 +265,12 @@ class ChatRepository @Inject constructor(
 
         val requestBody = gson.toJson(OpenAIChatRequest(model = modelId, messages = openMessages, stream = true))
 
+        val mediaType = "application/json; charset=utf-8".toMediaType()
         val request = Request.Builder()
             .url(url)
             .header("Authorization", "Bearer $apiKey")
             .header("Content-Type", "application/json")
-            .post(okhttp3.RequestBody.create(okhttp3.MediaType.parse("application/json"), requestBody))
+            .post(requestBody.toRequestBody(mediaType))
             .build()
 
         val call = okHttpClient.newCall(request)

@@ -11,7 +11,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -129,7 +128,6 @@ fun TopBar(
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            // Model selector chip
             Surface(
                 shape = RoundedCornerShape(24.dp),
                 color = Color.White,
@@ -139,8 +137,8 @@ fun TopBar(
             ) {
                 Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(PurplePrimary))
-                    Text(activeModel.take(18), fontSize = 12.sp, fontWeight = FontWeight.Medium, color = DeepText, maxLines = 1)
-                    Icon(Icons.Default.ExpandMore, null, modifier = Modifier.size(16.dp), tint = MutedText)
+                    Text(activeModel.take(18).ifBlank { "Select model" }, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = DeepText, maxLines = 1)
+                    Icon(Icons.Default.KeyboardArrowDown, null, modifier = Modifier.size(16.dp), tint = MutedText)
                 }
             }
             IconButton(onClick = onNewChat, modifier = Modifier.size(40.dp).clip(CircleShape).background(Brush.linearGradient(listOf(PurplePrimary, PinkAccent)))) {
@@ -153,34 +151,113 @@ fun TopBar(
 @Composable
 fun EmptyState(onSuggestionClick: (String) -> Unit, activeApiName: String?) {
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
+        modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = Arrangement.Top
     ) {
-        GlowingOrb(modifier = Modifier.padding(bottom = 24.dp), sizeDp = 180)
-        Text("Hello, I'm Rivo", fontFamily = FontFamily.Serif, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, color = DeepText)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            if (activeApiName == null) "Add an API configuration to start chatting" else "How can I help you today?",
-            color = MutedText, fontSize = 14.sp
-        )
-        Spacer(Modifier.height(28.dp))
-        val suggestions = listOf("Explain quantum computing", "Write a Python script for API calls", "Help me plan a trip to Kyoto", "Summarize a complex topic")
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            suggestions.chunked(2).forEach { row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                    row.forEach { s ->
-                        SuggestionChip(label = s, onClick = { onSuggestionClick(s) }, modifier = Modifier.weight(1f))
-                    }
-                    if (row.size == 1) Spacer(Modifier.weight(1f))
+        // Top subtle badges like reference (Get Pro / close)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(shape = RoundedCornerShape(20.dp), color = Color.White, shadowElevation = 1.dp, border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight)) {
+                Row(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("✦", color = PurplePrimary, fontSize = 12.sp)
+                    Text("Get Pro 15%", color = DeepText, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Surface(shape = CircleShape, color = Color.White, shadowElevation = 1.dp) {
+                    Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) { Text("◐", color = MutedText, fontSize = 14.sp) }
+                }
+                Surface(shape = CircleShape, color = Color.White, shadowElevation = 1.dp) {
+                    Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) { Text("◑", color = MutedText, fontSize = 14.sp) }
                 }
             }
         }
+
+        Spacer(Modifier.height(10.dp))
+
+        GlowingOrb(modifier = Modifier.padding(top = 12.dp, bottom = 16.dp), sizeDp = 195)
+
+        Text(
+            text = "Hello Rehan",
+            fontFamily = FontFamily.Serif,
+            fontWeight = FontWeight.Light,
+            fontSize = 30.sp,
+            color = DeepText.copy(alpha = 0.95f),
+            letterSpacing = 0.3.sp
+        )
+        Text(
+            text = "How can i help",
+            fontFamily = FontFamily.Serif,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 30.sp,
+            color = DeepText,
+            lineHeight = 34.sp
+        )
+        Text(
+            text = "you today",
+            fontFamily = FontFamily.Serif,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 30.sp,
+            color = DeepText,
+            lineHeight = 34.sp
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = "is simply dummy text of the printing and\ntypesetting industry. Lorem Ipsum",
+            color = MutedText,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+
+        Spacer(Modifier.height(20.dp))
+
+        // Listening state hint like reference: "Speak your thoughts homie"
+        if (activeApiName == null) {
+            Text("Add an API to start", color = MutedText, fontSize = 13.sp)
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        // Suggestion chips like reference
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            SuggestionChip(label = "Read me a book", icon = "📖", onClick = { onSuggestionClick("Read me a book") }, modifier = Modifier.weight(1f))
+            SuggestionChip(label = "Personal therapy", icon = "✦", onClick = { onSuggestionClick("I need personal therapy advice") }, modifier = Modifier.weight(1f))
+        }
+        Spacer(Modifier.height(10.dp))
+        // Bottom hint row mimicking input placeholder style
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .background(Color.White)
+                .border(1.dp, BorderLight, RoundedCornerShape(24.dp))
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(modifier = Modifier.size(22.dp).clip(CircleShape).background(Brush.linearGradient(listOf(PurplePrimary, PinkAccent)))) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("◉", color = Color.White, fontSize = 10.sp)
+                    }
+                }
+                Text("Tap on AI to start speaking...", color = MutedText, fontSize = 12.sp)
+            }
+            Icon(Icons.Default.AttachFile, null, modifier = Modifier.size(16.dp), tint = MutedText)
+        }
+        Spacer(Modifier.height(4.dp))
     }
 }
 
 @Composable
-fun SuggestionChip(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun SuggestionChip(label: String, icon: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier.clickable { onClick() },
         shape = RoundedCornerShape(16.dp),
@@ -188,10 +265,9 @@ fun SuggestionChip(label: String, onClick: () -> Unit, modifier: Modifier = Modi
         shadowElevation = 1.dp,
         border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight)
     ) {
-        Row(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.ChatBubble, null, modifier = Modifier.size(16.dp), tint = PurplePrimary)
-            Spacer(Modifier.width(8.dp))
-            Text(label, fontSize = 12.sp, color = DeepText, maxLines = 2)
+        Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(icon, fontSize = 13.sp)
+            Text(label, fontSize = 11.sp, color = DeepText, lineHeight = 13.sp, fontWeight = FontWeight.Medium, maxLines = 2)
         }
     }
 }
@@ -220,7 +296,7 @@ fun InputBar(
                 value = text,
                 onValueChange = onTextChange,
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Ask Rivo anything…", color = MutedText, fontSize = 14.sp) },
+                placeholder = { Text("Write down instead...", color = MutedText, fontSize = 13.sp) },
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Color.Transparent,
                     unfocusedContainerColor = Color.Transparent,
