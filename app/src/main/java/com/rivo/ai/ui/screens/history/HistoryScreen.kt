@@ -7,8 +7,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,7 +43,7 @@ fun HistoryScreen(vm: HistoryViewModel = hiltViewModel(), onBack: () -> Unit, on
         if (conversations.isEmpty()) {
             Box(modifier = Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.DateRange, null, modifier = Modifier.size(56.dp), tint = MutedText)
+                    Icon(Icons.Filled.Home, null, modifier = Modifier.size(56.dp), tint = MutedText)
                     Spacer(Modifier.height(12.dp))
                     Text("No conversations yet", color = MutedText)
                 }
