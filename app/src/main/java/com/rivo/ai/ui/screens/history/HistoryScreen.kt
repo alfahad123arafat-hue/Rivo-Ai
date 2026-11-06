@@ -43,7 +43,7 @@ fun HistoryScreen(vm: HistoryViewModel = hiltViewModel(), onBack: () -> Unit, on
         if (conversations.isEmpty()) {
             Box(modifier = Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.Refresh, null, modifier = Modifier.size(56.dp), tint = MutedText)
+                    Icon(Icons.Default.DateRange, null, modifier = Modifier.size(56.dp), tint = MutedText)
                     Spacer(Modifier.height(12.dp))
                     Text("No conversations yet", color = MutedText)
                 }

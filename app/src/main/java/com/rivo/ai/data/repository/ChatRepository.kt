@@ -277,11 +277,11 @@ class ChatRepository @Inject constructor(
         val response = withContext(Dispatchers.IO) { call.execute() }
 
         if (!response.isSuccessful) {
-            val err = response.body()?.string() ?: response.message()
-            throw IOException(parseOpenAIErrorString(response.code(), err))
+            val err = response.body?.string() ?: response.message
+            throw IOException(parseOpenAIErrorString(response.code, err))
         }
 
-        val source = response.body()?.source() ?: throw IOException("Empty response")
+        val source = response.body?.source() ?: throw IOException("Empty response")
         try {
             while (!source.exhausted()) {
                 val line = source.readUtf8Line() ?: break
