@@ -83,13 +83,17 @@ class HomeViewModel @Inject constructor(
         if (_isGenerating.value) return
         viewModelScope.launch {
             try {
-                var active = repo.getActiveApiConfig()
-                // Prefer conversation's original API if it exists
-                _currentConversationId.value?.let { cid ->
-                    repo.getConversation(cid)?.apiConfigId?.let { storedId ->
-                        repo.getApiConfigById(storedId)?.let { stored -> active = stored }
+                var activeVar = repo.getActiveApiConfig()
+                val cid = _currentConversationId.value
+                if (cid != null) {
+                    val conv = repo.getConversation(cid)
+                    val storedId = conv?.apiConfigId
+                    if (storedId != null) {
+                        val stored = repo.getApiConfigById(storedId)
+                        if (stored != null) activeVar = stored
                     }
                 }
+                val active = activeVar
                 if (active == null) {
                     _error.value = "No active API configured. Please add one in API Settings."
                     return@launch
@@ -102,7 +106,6 @@ class HomeViewModel @Inject constructor(
                 _inputText.value = ""
                 repo.addMessage(convId, "user", text)
                 val history = repo.getMessages(convId).filterNot { it.isError }
-                // Only include enabled prompts; getActivePrompt already respects isEnabled but double-check
                 val activePrompt = repo.getActivePrompt()
                 val systemPromptText = if (activePrompt?.isEnabled == true) activePrompt.promptText.takeIf { it.isNotBlank() } else null
 
@@ -122,7 +125,6 @@ class HomeViewModel @Inject constructor(
                             repo.updateMessage(assistantMsgId, "(Empty response)")
                         }
                     } catch (e: kotlinx.coroutines.CancellationException) {
-                        // Stopped by user
                         if (buffer.isNotEmpty()) repo.updateMessage(assistantMsgId, buffer.toString())
                         else repo.updateMessage(assistantMsgId, "Stopped")
                         throw e

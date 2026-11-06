@@ -18,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.ensureActive
 import okhttp3.ResponseBody
 import retrofit2.Response
 
@@ -202,7 +203,6 @@ class ChatRepository @Inject constructor(
         val e = ConversationEntity(title = title, apiConfigId = apiConfigId, modelId = modelId, systemPromptId = systemPromptId)
         return conversationDao.insert(e)
     }
-    suspend fun getConversation(id: Long) = conversationDao.getById(id)
     suspend fun deleteConversation(id: Long) {
         messageDao.deleteForConversation(id)
         conversationDao.deleteById(id)
